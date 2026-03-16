@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+
+  redis:
+    image: redis:7
+    container_name: news_redis
+    ports:
+      - "6379:6379"
+
+  api:
+    build: .
+    container_name: news_api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - redis
+
+  worker:
+    build: .
+    container_name: news_worker
+    command: celery -A app.tasks.celery worker --loglevel=info --concurrency=4
+    env_file:
+      - .env
+    depends_on:
+      - redis
