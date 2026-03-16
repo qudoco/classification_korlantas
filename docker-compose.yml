@@ -11,9 +11,9 @@ services:
   api:
     build: .
     container_name: news_api
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    command: uvicorn app.main:app --host 0.0.0.0 --port 1112 --workers 4
     ports:
-      - "8000:8000"
+      - "1112:1112"
     env_file:
       - .env
     depends_on:
