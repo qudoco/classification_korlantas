@@ -1,14 +1,18 @@
-from fastapi import FastAPI, BackgroundTasks
-from .tasks import scoring_task
-from .schemas import NewsRequest
-from .tasks import celery  
+from fastapi import FastAPI, APIRouter
+from fastapi.middleware.cors import CORSMiddleware
 from celery.result import AsyncResult
 
-app = FastAPI()
+from .tasks import scoring_task, celery
+from .schemas import NewsRequest
 
+router = APIRouter(
+    prefix="/news_classify",
+    tags=["classify"]
+)
 
-@app.post("/predict")
+@router.post("/predict")
 async def predict(news: NewsRequest):
+
     task = scoring_task.delay(news.dict())
 
     return {
@@ -17,7 +21,8 @@ async def predict(news: NewsRequest):
         "task_id": task.id
     }
 
-@app.get("/predict/result/{task_id}")
+"""
+@router.get("/predict/result/{task_id}")
 async def get_result(task_id: str):
 
     task = AsyncResult(task_id, app=celery)
@@ -38,3 +43,20 @@ async def get_result(task_id: str):
         }
 
     return {"status": task.state}
+"""
+
+app = FastAPI(
+    title="Classify News for Multipool and Korlantas",
+    description="API for classifying news multipool or korlantas",
+    version="0.1.0",
+    docs_url="/docs",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(router, prefix="/v1")
