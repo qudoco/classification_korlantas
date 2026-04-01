@@ -10,6 +10,8 @@ from .llm import call_llm
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+APP_VERSION = "0.1.0"
+
 celery = Celery(
     "tasks",
     broker=REDIS_URL,
@@ -29,6 +31,7 @@ def scoring_task(self, payload):
     start_time = time.time()
 
     logger.info("=" * 50)
+    logger.info(f"[WORKER] version={APP_VERSION} | id={payload.get('id')}")
     logger.info(f"[TASK START] ID={payload.get('id')} | mediaId={payload.get('mediaId')}")
     logger.info(f"Client: {payload.get('client')}")
     logger.info("=" * 50)
