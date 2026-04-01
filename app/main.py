@@ -11,7 +11,7 @@ from .schemas import NewsRequest
 # CONFIG
 # ========================
 APP_NAME = "news-classifier"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.1.1"
 APP_ENV = "production"
 
 # ========================
@@ -90,6 +90,7 @@ async def predict(news: NewsRequest):
 # ========================
 # OPTIONAL RESULT CHECK
 # ========================
+"""
 @router.get("/predict/result/{task_id}")
 async def get_result(task_id: str):
 
@@ -114,7 +115,18 @@ async def get_result(task_id: str):
             "error": str(task.info)
         }
 
-    return {"status": task.state}
+    return {"status": task.state}"""
+
+# ========================
+# Cek version
+# ========================
+@router.get("/version")
+async def get_version():
+    return {
+        "app": APP_NAME,
+        "version": APP_VERSION,
+        "env": APP_ENV
+    }
 
 
 # ========================
