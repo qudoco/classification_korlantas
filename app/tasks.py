@@ -2,6 +2,7 @@ from celery import Celery
 import requests
 import logging
 import time
+import json
 
 from .config import REDIS_URL
 from .llm import call_llm
@@ -10,7 +11,7 @@ from .llm import call_llm
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.1.1"
 
 celery = Celery(
     "tasks",
@@ -71,13 +72,17 @@ def scoring_task(self, payload):
         if payload.get("urlCallback"):
             callback_url = payload["urlCallback"]
 
-            logger.info(f"Sending callback to {callback_url}")
+            logger.info(f"[CALLBACK URL] {callback_url}")
+
+            # print payload yang dikirim (pretty JSON biar enak dibaca)
+            logger.info("[CALLBACK PAYLOAD]")
+            logger.info(json.dumps(result, indent=2))
 
             try:
                 response = requests.post(
                     callback_url,
                     json=result,
-                    timeout=15   # jangan 300, bahaya
+                    timeout=15
                 )
 
                 logger.info(f"[CALLBACK STATUS] {response.status_code}")
@@ -87,17 +92,13 @@ def scoring_task(self, payload):
                     logger.warning(
                         f"[CALLBACK FAILED] status={response.status_code}"
                     )
-                    # OPTIONAL: jangan retry kalau logic error
                     return
 
                 logger.info("[CALLBACK SUCCESS]")
 
             except requests.exceptions.RequestException as err:
                 logger.error(f"[CALLBACK ERROR] {err}")
-                raise  # retry hanya network error
-
-        else:
-            logger.warning("[NO CALLBACK URL PROVIDED]")
+                raise err
 
         duration = time.time() - start_time
         logger.info(f"[TASK DONE] ID={payload.get('id')} | duration={duration:.2f}s")
