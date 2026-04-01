@@ -11,10 +11,10 @@ class NewsRequest(BaseModel):
         ...,
         description="Isi lengkap artikel berita yang akan dilakukan scoring relevansi"
     )
-    #urlCallback: Optional[str] = Field(
-        #None,
-        #description="URL callback untuk mengirim hasil scoring setelah proses selesai"
-    #)
+    urlCallback: Optional[str] = Field(
+        None,
+        description="URL callback untuk mengirim hasil scoring setelah proses selesai"
+    )
     id: int = Field(
         ...,
         description="ID unik artikel dari sistem sumber"
