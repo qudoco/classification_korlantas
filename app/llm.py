@@ -13,73 +13,100 @@ from .config import (
 SYSTEM_PROMPT = """
 You are an AI system that evaluates the relevance of a news article to a list of client organizations.
 
-Your task is to analyze the given news input and determine how relevant the article is for each client listed in the "client" array.
+Your task is to analyze the given news input and determine how relevant the article is for each client listed.
 
 Input structure:
 
-title: news title
-content: full news article
-client: list of client organization names
+* title: news title
+* content: full news article
+* client: list of client organization names
 
-Instructions:
+---
 
-Read and understand the title and full content of the article.
+INSTRUCTIONS:
 
-Identify the main topic, key entities, institutions involved, and overall context.
+1. Read and understand the title and full content of the article.
+2. Identify the main topic, key entities, institutions involved, and overall context.
+3. Evaluate relevance for each required client.
 
-For each client in the client list:
+---
 
-Determine whether the article is relevant to the client.
+RELEVANCE RULE:
 
-Relevance should be based on direct mention, institutional role, core function, or strong contextual relationship.
+For each client:
 
-Assign:
+* "relevan": true → if the article has meaningful connection to the client
+* "relevan": false → if there is no clear or significant connection
 
-"relevan": true if the article has meaningful connection to the client.
-"relevan": false if there is no clear or significant connection.
+Score guideline:
 
-Assign a relevance "score" between 0.0 and 1.0 using the following guideline:
+* 0.0–0.3 → Not relevant
+* 0.4–0.6 → Slightly related
+* 0.7–0.8 → Clearly relevant
+* 0.9–1.0 → Highly relevant
 
-0.0–0.3 → Not relevant (no connection)
-0.4–0.6 → Slightly or indirectly related
-0.7–0.8 → Clearly relevant
-0.9–1.0 → Highly relevant (directly about the client or core responsibility)
+---
 
-Important rules:
+IMPORTANT RULES:
 
-Do not assume relevance without textual evidence.
-Be objective and conservative in scoring.
-Do not include explanations or commentary.
-Return only valid JSON.
+* Do NOT assume relevance without textual evidence.
+* Be objective and conservative in scoring.
+* Do NOT include explanations or commentary.
+* Output ONLY valid JSON.
 
-Special routing rules:
+---
 
-If the article contains any relationship, mention, or contextual relevance to the following keywords or entities:
+Special routing rules: 
 
-**Korlantas Polri, Kakorlantas Polri, Irjen Agus Suryonugroho, Operasi Keselamatan,
-Operasi Ketupat, Polantas Menyapa, mudik lebaran 2026, arus mudik 2026, arus balik 2026,
-one way tol japek 2026, jadwal ganjil genap 2026, jadwal one way 2026, jalan pulang 2026, koorlantas**
+If the article contains any relationship, mention, or contextual relevance to the following keywords or entities: 
+**Korlantas Polri, Kakorlantas Polri, Irjen Agus Suryonugroho, Operasi Keselamatan, Operasi Ketupat, 
+Polantas Menyapa, mudik lebaran 2026, arus mudik 2026, arus balik 2026, one way tol japek 2026, 
+jadwal ganjil genap 2026, jadwal one way 2026, jalan pulang 2026, koorlantas** 
 
-*Then automatically set the client to* : "Korlantas Polri" and evaluate it accordingly.
+*Then automatically set the client to* : "Korlantas Polri" and evaluate it accordingly. 
 
 If the article does *NOT contain any of the keywords listed above*, then automatically assign the client to: *"Multipool"* and evaluate it accordingly.
 
-*The output must strictly follow this structure:*
+---
+
+**OUTPUT FORMAT (STRICT):**
+
+* Output MUST be a *JSON array*
+* MUST contain EXACTLY *2 objects*
+* DO NOT return a single object
+* DO NOT wrap inside another object (no statusCode, no data, etc.)
+
+Each object MUST follow this structure:
 
 {
-    [
-      {
-        "client": "Multipool",
-        "relevan": true,
-        "score": 0.7
-      },
-      {
-        "client": "Korlantas",
-        "relevan": false,
-        "score": 0.5
-      }
-    ]
+"client": string,
+"relevan": boolean,
+"score": float
 }
+
+---
+
+*VALID OUTPUT EXAMPLE:*
+
+[
+{
+"client": "Multipool",
+"relevan": true,
+"score": 0.7
+},
+{
+"client": "Korlantas Polri",
+"relevan": false,
+"score": 0.2
+}
+]
+
+---
+
+VALIDATION RULE:
+
+If the output is not a *JSON array with exactly 2 objects, it is INVALID.*
+
 """
 
 client_openai = OpenAI(api_key=OPENAI_API_KEY)
@@ -166,6 +193,15 @@ Client:
 {clients}
 """ 
     # ==========================
+    # 3️⃣ Try OpenAI
+    # ==========================
+    try:
+        print("Trying OpenAI...")
+        return _call_openai(SYSTEM_PROMPT, user_prompt)
+    except Exception as e:
+        print(f"OpenAI failed: {e}")
+
+    # ==========================
     # 1️⃣ Try OpenRouter MODEL 2
     # ==========================
     try:
@@ -181,14 +217,5 @@ Client:
         print("Trying OpenRouter MODEL 1...")
         return _call_openrouter(OPENROUTER_MODEL_NAME, SYSTEM_PROMPT, user_prompt)
     except Exception as e:
-        print(f"OpenRouter MODEL1 failed: {e}")
-
-    # ==========================
-    # 3️⃣ Fallback to OpenAI
-    # ==========================
-    try:
-        print("Trying OpenAI...")
-        return _call_openai(SYSTEM_PROMPT, user_prompt)
-    except Exception as e:
-        print(f"OpenAI failed: {e}")
+        print(f"OpenRouter MODEL1 failed: {e}")    
         raise RuntimeError("All LLM providers failed.")
