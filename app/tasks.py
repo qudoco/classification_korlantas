@@ -11,7 +11,7 @@ from .llm import call_llm
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-APP_VERSION = "0.1.2"
+APP_VERSION = "0.1.3"
 
 celery = Celery(
     "tasks",
