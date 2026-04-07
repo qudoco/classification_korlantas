@@ -3,26 +3,37 @@ import requests
 import logging
 import time
 import json
+import redis
 
 from .config import REDIS_URL
 from .llm import call_llm
 
-# logging setup
+# ========================
+# LOGGING
+# ========================
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-APP_VERSION = "0.1.3"
+APP_VERSION = "0.1.4"
 
+# ========================
+# CELERY
+# ========================
 celery = Celery(
     "tasks",
     broker=REDIS_URL,
     backend=REDIS_URL
 )
 
+# ========================
+# REDIS TRACKING
+# ========================
+redis_client = redis.Redis.from_url(REDIS_URL)
+
 
 @celery.task(
     bind=True,
-    autoretry_for=(requests.exceptions.RequestException,),  # retry hanya network error
+    autoretry_for=(requests.exceptions.RequestException,),
     retry_backoff=5,
     retry_backoff_max=60,
     retry_jitter=True,
@@ -30,29 +41,36 @@ celery = Celery(
 )
 def scoring_task(self, payload):
     start_time = time.time()
+    task_id = self.request.id
+
+    # ========================
+    # TRACK QUEUE
+    # ========================
+    redis_client.lrem("job_pending", 0, task_id)
+    redis_client.lpush("job_active", task_id)
 
     logger.info("=" * 50)
-    logger.info(f"[WORKER] version={APP_VERSION} | id={payload.get('id')}")
-    logger.info(f"[TASK START] ID={payload.get('id')} | mediaId={payload.get('mediaId')}")
-    logger.info(f"Client: {payload.get('client')}")
+    logger.info(f"[WORKER] version={APP_VERSION}")
+    logger.info(f"[TASK START] ID={payload.get('id')} | task_id={task_id}")
     logger.info("=" * 50)
 
     try:
         # ========================
-        # 1. CALL LLM
+        # UPDATE STATE
         # ========================
-        logger.info("Calling LLM...")
+        self.update_state(state="STARTED")
 
+        # ========================
+        # CALL LLM
+        # ========================
         relevances = call_llm(
             payload["title"],
             payload["content"],
             payload["client"]
         )
 
-        logger.info("LLM predict success")
-
         # ========================
-        # 2. BUILD RESULT
+        # BUILD RESULT
         # ========================
         result = {
             "statusCode": 200,
@@ -64,10 +82,8 @@ def scoring_task(self, payload):
             }
         }
 
-        logger.info(f"[RESULT READY] {result['data']['id']}")
-
         # ========================
-        # 3. CALLBACK
+        # CALLBACK
         # ========================
         if payload.get("urlCallback"):
             callback_url = payload["urlCallback"]
@@ -100,11 +116,21 @@ def scoring_task(self, payload):
                 logger.error(f"[CALLBACK ERROR] {err}")
                 raise err
 
+        # ========================
+        # MOVE QUEUE
+        # ========================
+        redis_client.lrem("job_active", 0, task_id)
+        redis_client.lpush("job_done", task_id)
+
         duration = time.time() - start_time
-        logger.info(f"[TASK DONE] ID={payload.get('id')} | duration={duration:.2f}s")
+        logger.info(f"[TASK DONE] {task_id} | {duration:.2f}s")
 
         return result
 
     except Exception as e:
-        logger.exception(f"[TASK ERROR] ID={payload.get('id')}")
+        logger.exception(f"[TASK ERROR] {task_id}")
+
+        redis_client.lrem("job_active", 0, task_id)
+        redis_client.lpush("job_failed", task_id)
+
         raise e
