@@ -1,9 +1,12 @@
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from celery.result import AsyncResult
+from celery.app.control import Inspect
 from contextlib import asynccontextmanager
 import logging
+import redis
 
+from .config import REDIS_URL
 from .tasks import scoring_task, celery
 from .schemas import NewsRequest
 
@@ -11,8 +14,9 @@ from .schemas import NewsRequest
 # CONFIG
 # ========================
 APP_NAME = "news-classifier"
-APP_VERSION = "0.1.3"
+APP_VERSION = "0.1.4"
 APP_ENV = "production"
+redis_client = redis.Redis.from_url(REDIS_URL)
 
 # ========================
 # LOGGING
@@ -63,7 +67,9 @@ router = APIRouter(
     tags=["classify"]
 )
 
-
+# ========================
+# Post Predict Endpoint
+# ========================
 @router.post("/predict")
 async def predict(news: NewsRequest):
 
@@ -86,6 +92,85 @@ async def predict(news: NewsRequest):
         "task_id": task.id
     }
 
+# ========================
+# Post Predict Endpoint (Batch)
+# ========================
+@router.post("/predict/batch")
+async def predict_batch(news_list: list[NewsRequest]):
+
+    task_ids = []
+
+    for news in news_list:
+        payload = news.dict()
+        task = scoring_task.delay(payload)
+        task_ids.append(task.id)
+
+        # track pending
+        redis_client.lpush("job_pending", task.id)
+
+    return {
+        "statusCode": 202,
+        "message": "batch submitted",
+        "total": len(task_ids),
+        "task_ids": task_ids
+    }
+
+# ========================
+# Get Queue Redis (REAL monitoring)
+# ========================
+@router.get("/jobs/queue")
+async def get_queue():
+
+    pending = redis_client.lrange("job_pending", 0, 100)
+    active = redis_client.lrange("job_active", 0, 100)
+    done = redis_client.lrange("job_done", 0, 100)
+    failed = redis_client.lrange("job_failed", 0, 100)
+
+    return {
+        "pending": [p.decode() for p in pending],
+        "active": [a.decode() for a in active],
+        "done": [d.decode() for d in done],
+        "failed": [f.decode() for f in failed],
+    }
+
+# ========================
+# Celery Inspect (worker-level monitoring)
+# ========================
+@router.get("/jobs/workers")
+async def get_workers():
+
+    i = celery.control.inspect()
+
+    return {
+        "active": i.active() or {},
+        "reserved": i.reserved() or {},
+        "scheduled": i.scheduled() or {},
+    }
+
+# ========================
+# Check per task
+# ========================
+@router.get("/jobs/{task_id}")
+async def get_result(task_id: str):
+
+    task = AsyncResult(task_id, app=celery)
+
+    if task.state == "PENDING":
+        return {"status": "pending"}
+
+    if task.state == "STARTED":
+        return {"status": "processing"}
+
+    if task.state == "SUCCESS":
+        return task.result
+
+    if task.state == "FAILURE":
+        return {
+            "status": "failed",
+            "error": str(task.info)
+        }
+
+    return {"status": task.state}
 
 # ========================
 # OPTIONAL RESULT CHECK
