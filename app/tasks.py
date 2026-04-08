@@ -14,7 +14,7 @@ from .llm import call_llm
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-APP_VERSION = "0.1.4"
+APP_VERSION = "0.1.5"
 
 # ========================
 # CELERY
@@ -105,21 +105,18 @@ def scoring_task(self, payload):
                 logger.info(f"[CALLBACK RESPONSE] {response.text}")
 
                 if response.status_code != 200:
-                    logger.warning(
-                        f"[CALLBACK FAILED] status={response.status_code}"
+                    raise Exception(
+                        f"Callback failed with status {response.status_code}"
                     )
-                    return
 
                 logger.info("[CALLBACK SUCCESS]")
 
             except requests.exceptions.RequestException as err:
                 logger.error(f"[CALLBACK ERROR] {err}")
-                raise err
 
         # ========================
         # MOVE QUEUE
         # ========================
-        redis_client.lrem("job_active", 0, task_id)
         redis_client.lpush("job_done", task_id)
 
         duration = time.time() - start_time
@@ -130,7 +127,13 @@ def scoring_task(self, payload):
     except Exception as e:
         logger.exception(f"[TASK ERROR] {task_id}")
 
-        redis_client.lrem("job_active", 0, task_id)
         redis_client.lpush("job_failed", task_id)
 
         raise e
+
+    finally:
+        # ========================
+        # cleanup active
+        # ========================
+        redis_client.lrem("job_active", 0, task_id)
+        logger.info(f"[QUEUE CLEANUP] removed from active | {task_id}")
