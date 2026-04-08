@@ -14,7 +14,7 @@ from .schemas import NewsRequest
 # CONFIG
 # ========================
 APP_NAME = "news-classifier"
-APP_VERSION = "0.1.4"
+APP_VERSION = "0.1.5"
 APP_ENV = "production"
 redis_client = redis.Redis.from_url(REDIS_URL)
 
@@ -83,6 +83,8 @@ async def predict(news: NewsRequest):
     logger.info(f"[API CALLBACK URL] {payload.get('urlCallback')}")
 
     task = scoring_task.delay(payload)
+
+    redis_client.lpush("job_pending", task.id)
 
     logger.info(f"[TASK CREATED] task_id={task.id}")
 
