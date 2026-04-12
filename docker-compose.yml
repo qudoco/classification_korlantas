@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+
+  redis:
+    image: redis:7
+    container_name: news_redis
+    ports:
+      - "6379:6379"
+    restart: always
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build: .
+    container_name: news_api
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 1112
+      --workers 4
+    ports:
+      - "1112:1112"
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: always
+
+  worker:
+    build: .
+    container_name: news_worker
+    command: >
+      celery -A app.tasks.celery worker
+      --loglevel=info
+      --concurrency=8
+      --prefetch-multiplier=1
+      -Ofair
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: always

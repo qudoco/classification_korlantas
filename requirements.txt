@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+celery
+redis
+requests
+openai
+python-dotenv
+tenacity
+pydantic
+transformers
+optimum[onnxruntime]
+onnxruntime
