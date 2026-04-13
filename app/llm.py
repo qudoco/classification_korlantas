@@ -1,7 +1,10 @@
+import asyncio
+import httpx
+import json
 import requests
 import time
-import json
-from openai import OpenAI
+#from openai import OpenAI
+from openai import AsyncOpenAI
 from .config import (
     OPENAI_API_KEY,
     GPT_MODEL_NAME,
@@ -125,9 +128,25 @@ VALIDATION RULE:
 If the output does not strictly follow the *JSON structure above, it is INVALID.*
 """
 
-client_openai = OpenAI(api_key=OPENAI_API_KEY)
+client_openai = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
-def _call_openrouter(model_name, system_prompt, user_prompt, max_retries=3):
+semaphore = asyncio.Semaphore(5)
+
+# =========================
+# SAFE JSON PARSER
+# =========================
+def _safe_json_loads(output: str):
+    try:
+        return json.loads(output)
+    except json.JSONDecodeError:
+        print("⚠️ JSON invalid, retry cleaning...")
+        # simple fix attempt
+        output = output.strip().replace("```json", "").replace("```", "")
+        return json.loads(output)
+
+async def _call_openrouter(model_name, system_prompt, user_prompt, max_retries=3):
+
+    url = "https://openrouter.ai/api/v1/chat/completions"
 
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -144,60 +163,55 @@ def _call_openrouter(model_name, system_prompt, user_prompt, max_retries=3):
         "response_format": {"type": "json_object"}
     }
 
-    # Khusus gpt-oss reasoning model
     if "gpt-oss" in model_name:
         payload["reasoning"] = {"enabled": True}
 
-    for attempt in range(max_retries):
+    async with httpx.AsyncClient(timeout=60) as client:
 
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            data=json.dumps(payload),
-            timeout=60
-        )
+        for attempt in range(max_retries):
+            try:
+                async with semaphore:
+                    response = await client.post(url, headers=headers, json=payload)
 
-        # ========================
-        # 429 → retry exponential
-        # ========================
-        if response.status_code == 429:
-            wait_time = 3 * (attempt + 1)
-            print(f"Rate limited. Waiting {wait_time}s...")
-            time.sleep(wait_time)
-            continue
+                # 429 retry
+                if response.status_code == 429:
+                    wait_time = 2 ** attempt
+                    print(f"[OpenRouter] Rate limited. Wait {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                    continue
 
-        # ========================
-        # 404 → model not found
-        # ========================
-        if response.status_code == 404:
-            raise ValueError(
-                f"Model '{model_name}' not found or not available for your key."
-            )
+                # 404 model not found
+                if response.status_code == 404:
+                    raise ValueError(f"Model '{model_name}' not found.")
 
-        response.raise_for_status()
+                response.raise_for_status()
 
-        data = response.json()
-        output = data["choices"][0]["message"]["content"]
+                data = response.json()
+                output = data["choices"][0]["message"]["content"]
 
-        return json.loads(output)
+                return _safe_json_loads(output)
+
+            except Exception as e:
+                print(f"[OpenRouter] attempt {attempt+1} failed: {e}")
+                await asyncio.sleep(1)
 
     raise RuntimeError("OpenRouter max retries exceeded")
 
-
-def _call_openai(system_prompt, user_prompt):
-    response = client_openai.chat.completions.create(
-        model=GPT_MODEL_NAME,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
-    )
+async def _call_openai(system_prompt, user_prompt):
+    async with semaphore:
+        response = await client_openai.chat.completions.create(
+            model=GPT_MODEL_NAME,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+        )
 
     output = response.choices[0].message.content
-    return json.loads(output)
+    return _safe_json_loads(output)
 
 
-def call_llm(title: str, content: str, clients):
+async def call_llm(title: str, content: str, clients):
 
     user_prompt = f"""
 Judul: {title}
@@ -213,7 +227,7 @@ Client:
     # ==========================
     try:
         print("Trying OpenAI...")
-        return _call_openai(SYSTEM_PROMPT, user_prompt)
+        return await _call_openai(SYSTEM_PROMPT, user_prompt)
     except Exception as e:
         print(f"OpenAI failed: {e}")
 
@@ -222,7 +236,7 @@ Client:
     # ==========================
     try:
         print("Trying OpenRouter MODEL 2...")
-        return _call_openrouter(OPENROUTER_MODEL_NAME2, SYSTEM_PROMPT, user_prompt)
+        return await _call_openrouter(OPENROUTER_MODEL_NAME2, SYSTEM_PROMPT, user_prompt)
     except Exception as e:
         print(f"OpenRouter MODEL2 failed: {e}")
 
@@ -231,7 +245,7 @@ Client:
     # ==========================
     try:
         print("Trying OpenRouter MODEL 1...")
-        return _call_openrouter(OPENROUTER_MODEL_NAME, SYSTEM_PROMPT, user_prompt)
+        return await _call_openrouter(OPENROUTER_MODEL_NAME, SYSTEM_PROMPT, user_prompt)
     except Exception as e:
         print(f"OpenRouter MODEL1 failed: {e}")    
         raise RuntimeError("All LLM providers failed.")

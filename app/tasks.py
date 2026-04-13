@@ -1,4 +1,5 @@
 from celery import Celery
+import asyncio
 import requests
 import logging
 import time
@@ -66,11 +67,11 @@ def scoring_task(self, payload):
         # ========================
         # CALL LLM Classification
         # ========================
-        relevances = call_llm(
+        relevances = asyncio.run(call_llm(
             payload["title"],
             payload["content"],
             payload["client"]
-        )
+        ))
 
         # ========================
         # CHUNKING
