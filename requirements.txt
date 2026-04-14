@@ -4,6 +4,7 @@ celery
 redis
 requests
 openai
+numpy==2.3.0
 python-dotenv
 tenacity
 pydantic
