@@ -1,13 +1,14 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
 fastapi
 uvicorn
 celery
 redis
 requests
 openai
-numpy==2.3.0
+numpy<=1.24.6
 python-dotenv
 tenacity
 pydantic
-transformers
+transformers==4.57.3
 optimum[onnxruntime]
-onnxruntime
