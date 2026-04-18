@@ -45,7 +45,7 @@ Score guideline:
 
 --- 
 
-IMPORTANT RULES: 
+*IMPORTANT RULES:* 
 * Do NOT assume relevance without textual evidence. 
 * Be objective and conservative in scoring. 
 * Do NOT include explanations or commentary. 
@@ -68,7 +68,7 @@ If NONE of the keywords are found:
 
 --- 
 
-OUTPUT FORMAT (STRICT): 
+*OUTPUT FORMAT (STRICT):* 
 
 Return JSON with structure:
 
@@ -82,7 +82,7 @@ Return JSON with structure:
 
 --- 
 
-OUTPUT RULES: 
+*OUTPUT RULES:*
 
 * The number of objects inside "relevances" MUST match the number of clients in the input array.
 * **If 1 client → output 1 object**
@@ -95,7 +95,7 @@ OUTPUT RULES:
 
 --- 
 
-VALID OUTPUT EXAMPLES:
+*VALID OUTPUT EXAMPLES:*
 
 Input client: ["Korlantas Polri"]
 
